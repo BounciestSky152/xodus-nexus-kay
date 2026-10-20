@@ -27,6 +27,7 @@ import { gameLocaleEnvironment, manifestLocales, manifestTitleId, supportedGameL
 import { antiCheatEnvironment } from './anti-cheat.js';
 import { gameLaunchArguments, preparedGameWine } from './game-launch.js';
 import { prepareGameWrapper, type GameWrapper } from './game-wrapper.js';
+import { WindowZoom } from './window-zoom.js';
 import { normalizeLaunchTools } from '../shared/launch-tools.js';
 import { LauncherUpdater } from './launcher-update.js';
 import { copyDiagnosticFile, diagnosticLogFile, readDiagnosticTail } from './diagnostic-log.js';
@@ -1559,6 +1560,10 @@ async function createWindow(): Promise<void> {
       offscreen: hiddenCapture,
     },
   });
+  const zoom = new WindowZoom(mainWindow);
+  mainWindow.on('resize', () => zoom.apply());
+  mainWindow.webContents.on('dom-ready', () => zoom.apply());
+  mainWindow.webContents.on('before-input-event', (event, input) => { if (zoom.handleInput(input)) event.preventDefault(); });
   mainWindow.webContents.on('did-fail-load', (_event, code, description) => console.error('Renderer load failed', code, description));
   mainWindow.webContents.on('render-process-gone', (_event, details) => console.error('Renderer process exited', details.reason));
   if (smokeScreenshot) mainWindow.webContents.on('console-message', (_event, level, message) => console.error(`Renderer console [${level}]`, message));

@@ -4,6 +4,7 @@
 
 - Fix Jurassic World Evolution 3 aborting during app-constrained notification registration at startup.
 - Fix repeated Xbox task-queue termination requests leaving games waiting during world cleanup or shutdown.
+- Scale the launcher interface to fill windows larger than 1920×1080, such as a 4K display or TV in Steam Game Mode, instead of showing small text in wide empty margins. Ctrl + and Ctrl − adjust the size; Ctrl 0 resets it.
 
 ## Backend 0.2.7
 
