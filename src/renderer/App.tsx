@@ -223,7 +223,9 @@ export type StoreSort = 'relevance' | 'pass-tier';
 
 /** Stable, so Microsoft Store relevance still orders games within each tier. */
 export function sortCatalogProducts(products: CatalogProduct[], sort: StoreSort): CatalogProduct[] {
-  return sort === 'pass-tier' ? [...products].sort((a, b) => gamePassTierRank(undefined, a.gamePassTier) - gamePassTierRank(undefined, b.gamePassTier)) : products;
+  // A Store pass name without a known PC tier still ranks ahead of retail-only games.
+  const rank = (product: CatalogProduct) => gamePassTierRank(product.includedWith ? 'gamepass' : undefined, product.gamePassTier);
+  return sort === 'pass-tier' ? [...products].sort((a, b) => rank(a) - rank(b)) : products;
 }
 
 const passName = (product: CatalogProduct) => product.gamePassTier ? gamePassTierLabels[product.gamePassTier] : product.includedWith;
@@ -405,6 +407,24 @@ export function LibraryProductCard({ product, present, downloading, installing, 
   </article>;
 }
 
+/** Installed games first unless sorting by tier. Installed games only know their tier once their library page has loaded. */
+export function libraryRows(games: Game[], page: Pick<AccountLibraryPage, 'products' | 'accessByProductId'> | undefined, { kind, playState, sort, query }: LibraryFilters) {
+  const installed = new Set(games.flatMap(game => game.storeId?.toUpperCase() ?? []));
+  const products = (page?.products ?? []).filter(product => !installed.has(product.productId) && !installed.has(product.installProductId ?? ''));
+  const access = (game: Game) => game.storeId ? page?.accessByProductId[game.storeId.toUpperCase()] : undefined;
+  const passTier = (game: Game) => {
+    const id = game.storeId?.toUpperCase();
+    return id ? page?.products.find(product => product.productId === id || product.installProductId === id)?.gamePassTier : undefined;
+  };
+  const rows = [
+    ...games.filter(game => playState !== 'installable' && (kind === 'all' || access(game) === kind)).sort((a, b) => a.title.localeCompare(b.title))
+      .map(game => { const tier = passTier(game); return { id: game.id, title: game.title, game, product: undefined, tier, rank: gamePassTierRank(access(game), tier) }; }),
+    ...products.filter(() => playState !== 'installed').map(product => ({ id: product.productId, title: product.title, product, game: undefined, tier: product.gamePassTier, rank: gamePassTierRank(product.access, product.gamePassTier) })),
+  ].filter(row => row.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+  if (sort === 'pass-tier') rows.sort((a, b) => a.rank - b.rank || a.title.localeCompare(b.title));
+  return rows;
+}
+
 export function AccountGames({ data, toast, selectedId, select, menu, filters, onFiltersChange }: AccountGamesProps) {
   const startPackageInstall = usePackageInstall();
   const [localFilters, setLocalFilters] = useState<LibraryFilters>(defaultLibraryFilters);
@@ -451,19 +471,8 @@ export function AccountGames({ data, toast, selectedId, select, menu, filters, o
   }, [identity, searching, busy, visible?.cursor, searchTerm, query]);
   const installed = new Set(data.games.flatMap(game => game.storeId?.toUpperCase() ?? []));
   const queued = new Set(data.downloads.filter(task => ['running', 'queued', 'paused'].includes(task.status)).map(task => task.productId.toUpperCase()));
-  const products = (visible?.products ?? []).filter(product => !installed.has(product.productId) && !installed.has(product.installProductId ?? ''));
   const access = (game: Game) => game.storeId ? visible?.accessByProductId[game.storeId.toUpperCase()] : undefined;
-  // Installed games only know their tier once their library page has loaded.
-  const passTier = (game: Game) => {
-    const id = game.storeId?.toUpperCase();
-    return id ? visible?.products.find(product => product.productId === id || product.installProductId === id)?.gamePassTier : undefined;
-  };
-  const rows = [
-    ...data.games.filter(game => playState !== 'installable' && (kind === 'all' || access(game) === kind)).sort((a, b) => a.title.localeCompare(b.title))
-      .map(game => { const tier = passTier(game); return { id: game.id, title: game.title, game, product: undefined, tier, rank: gamePassTierRank(access(game), tier) }; }),
-    ...products.filter(() => playState !== 'installed').map(product => ({ id: product.productId, title: product.title, product, game: undefined, tier: product.gamePassTier, rank: gamePassTierRank(product.access, product.gamePassTier) })),
-  ].filter(row => row.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
-  if (sort === 'pass-tier') rows.sort((a, b) => a.rank - b.rank || a.title.localeCompare(b.title));
+  const rows = libraryRows(data.games, visible, selectedFilters);
   async function load(refresh = false) {
     setBusy(true); setError(undefined);
     try {

@@ -17,6 +17,11 @@ it('keeps Microsoft Store relevance unless sorting by Game Pass tier', () => {
   expect(results[0].title).toBe('Not in pass');
 });
 
+it('ranks Store pass games without a known PC tier after tiered games but ahead of retail-only games', () => {
+  const results = [product('Retail'), product('EA Play only', undefined, 'EA Play'), product('Ultimate', 'ultimate')];
+  expect(sortCatalogProducts(results, 'pass-tier').map(item => item.title)).toEqual(['Ultimate', 'EA Play only', 'Retail']);
+});
+
 it('names the lowest Game Pass tier on Store cards, falling back to the Store pass name', () => {
   const card = (value: CatalogProduct) => renderToStaticMarkup(<StoreProductCard product={{ ...value, purchasePrice: '$29.99' }} selected={false} disabled={false} label="Install" select={() => {}} install={() => {}} />);
   expect(card(product('Tiered', 'pc', 'Xbox Game Pass'))).toContain('<span>$29.99 · PC Game Pass</span>');
