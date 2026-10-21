@@ -1,8 +1,17 @@
-import type { GamePassSubscription } from './types.js';
+import type { GamePassSubscription, GamePassTier } from './types.js';
 
 const labels: Record<string, string> = {
   CFQ7TTC0KHS0: 'ULTIMATE', CFQ7TTC0KGQ8: 'PC GAME PASS',
   CFQ7TTC0P85B: 'PREMIUM', CFQ7TTC0K5DJ: 'ESSENTIAL', CFQ7TTC0K6L8: 'GAME PASS CONSOLE',
+};
+// Game Pass Console is omitted because it never licenses PC packages.
+const pcTiers: Record<string, GamePassTier> = {
+  CFQ7TTC0K5DJ: 'essential', CFQ7TTC0P85B: 'premium', CFQ7TTC0KGQ8: 'pc', CFQ7TTC0KHS0: 'ultimate',
+};
+/** From the cheapest plan to the most inclusive one. */
+export const gamePassTiers: readonly GamePassTier[] = ['essential', 'premium', 'pc', 'ultimate'];
+export const gamePassTierLabels: Record<GamePassTier, string> = {
+  essential: 'Game Pass Essential', premium: 'Game Pass Premium', pc: 'PC Game Pass', ultimate: 'Game Pass Ultimate',
 };
 
 export function parseSubscription(value: unknown, now = Date.now()): GamePassSubscription | undefined {
@@ -21,4 +30,17 @@ export function subscriptionBadge(value: unknown): string | undefined {
   const subscription = parseSubscription(value);
   if (subscription?.status !== 'active') return;
   return Object.keys(labels).filter(id => subscription.productIds.includes(id)).map(id => labels[id])[0];
+}
+
+/** The cheapest known plan among the subscription IDs that satisfy a Store license. */
+export function lowestGamePassTier(planIds: Iterable<string>): GamePassTier | undefined {
+  const tiers = new Set([...planIds].flatMap(id => Object.hasOwn(pcTiers, id) ? pcTiers[id] : []));
+  return gamePassTiers.find(tier => tiers.has(tier));
+}
+
+/** Owned games need no plan. Unverified Game Pass access and local imports sort last. */
+export function gamePassTierRank(access: 'owned' | 'gamepass' | undefined, tier?: GamePassTier): number {
+  if (access === 'owned') return 0;
+  if (tier) return 1 + gamePassTiers.indexOf(tier);
+  return gamePassTiers.length + (access === 'gamepass' ? 1 : 2);
 }

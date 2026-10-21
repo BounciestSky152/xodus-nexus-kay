@@ -1,4 +1,5 @@
-import type { CatalogProduct, CatalogSearchResult, GameStoreDetails } from '../shared/types.js';
+import type { CatalogProduct, CatalogSearchResult, GamePassTier, GameStoreDetails } from '../shared/types.js';
+import { lowestGamePassTier } from '../shared/subscription.js';
 
 type Fetcher = typeof fetch;
 
@@ -135,6 +136,27 @@ function includedWith(product: StoreSearchProduct): string | undefined {
   return undefined;
 }
 
+/** Game Pass plans appear as `big:<plan ID>:…` keys that satisfy a non-trial Store offer. */
+function gamePassTier(product: Record<string, unknown> | undefined): GamePassTier | undefined {
+  const plans = new Set<string>();
+  const skus = Array.isArray(product?.DisplaySkuAvailabilities) ? product.DisplaySkuAvailabilities : [];
+  for (const availability of skus) {
+    if (object(object(object(availability)?.Sku)?.Properties)?.IsTrial === true) continue;
+    const offers = object(availability)?.Availabilities;
+    for (const offer of Array.isArray(offers) ? offers : []) {
+      const satisfying = object(object(offer)?.LicensingData)?.SatisfyingEntitlementKeys;
+      for (const entry of Array.isArray(satisfying) ? satisfying : []) {
+        const keys = object(entry)?.EntitlementKeys;
+        for (const key of Array.isArray(keys) ? keys : []) {
+          const parts = string(key)?.split(':');
+          if (parts?.length === 3 && parts[0] === 'big') plans.add(parts[1].toUpperCase());
+        }
+      }
+    }
+  }
+  return lowestGamePassTier(plans);
+}
+
 function purchasePrice(product: StoreSearchProduct): string | undefined {
   const price = string(object(product.priceInfo)?.displayPrice);
   if (price && price.toLowerCase() !== 'included') return price;
@@ -263,6 +285,7 @@ export function parseCatalogProducts(search: StoreSearchResponse, catalog: Displ
       categories: Array.isArray(product.categories) ? product.categories.flatMap((entry) => string(entry) ?? []) : [],
       purchasePrice: purchasePrice(product),
       includedWith: includedWith(product),
+      gamePassTier: gamePassTier(detailMap.get(productId)),
       releaseDate: string(product.releaseDateUtc),
       averageRating: typeof product.averageRating === 'number' ? product.averageRating : undefined,
       ...support,

@@ -38,6 +38,9 @@ export interface GamePassSubscription {
   checkedAt: string;
 }
 
+/** Lowest Game Pass plan whose Store license covers a game's PC package. */
+export type GamePassTier = 'essential' | 'premium' | 'pc' | 'ultimate';
+
 export interface BackendStatus {
   available: boolean;
   source: 'external' | 'managed' | 'none';
@@ -278,6 +281,7 @@ export interface CatalogProduct {
   categories: string[];
   purchasePrice?: string;
   includedWith?: string;
+  gamePassTier?: GamePassTier;
   releaseDate?: string;
   averageRating?: number;
   installability: 'supported' | 'unsupported' | 'unknown';

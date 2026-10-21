@@ -8,7 +8,7 @@ import {
 import type { AccountLibraryPage, AppSnapshot, CatalogProduct, CatalogSearchResult, DiagnosticLog, Game, GameContentPlan, GameLaunchOptions, Page, Settings } from '../shared/types';
 import { estimateTimeRemaining } from '../shared/utils';
 import { nexusRuntimeUpdateAvailable, runtimeDisplay } from '../shared/runtime-display';
-import { subscriptionBadge } from '../shared/subscription';
+import { gamePassTierLabels, gamePassTierRank, subscriptionBadge } from '../shared/subscription';
 import { defaultLaunchTools, normalizeLaunchTools } from '../shared/launch-tools';
 import type { GameLaunchTools } from '../shared/types';
 import { PackageInstallProvider, usePackageInstall } from './PackageInstall';
@@ -389,7 +389,7 @@ export function LibraryProductCard({ product, present, downloading, installing, 
     if (!disabled && document.activeElement === card.current) card.current?.querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: true });
   }, [disabled]);
   return <article ref={card} className="catalog-card" data-gamepad-card tabIndex={disabled ? 0 : -1} aria-label={disabled ? `${product.title}, ${label}. Action unavailable` : undefined}>
-    <div className="catalog-card-main">{product.posterUrl ? <img src={product.posterUrl} alt={`${product.title} cover`} loading="lazy" /> : <div className="catalog-cover-placeholder"><Gamepad2 /></div>}<span className="catalog-support supported">PC</span><div><GameTitle title={product.title} /><small>{product.publisher ?? product.productId}</small><span>{product.access === 'owned' ? 'Owned' : 'Game Pass'}</span></div></div>
+    <div className="catalog-card-main">{product.posterUrl ? <img src={product.posterUrl} alt={`${product.title} cover`} loading="lazy" /> : <div className="catalog-cover-placeholder"><Gamepad2 /></div>}<span className="catalog-support supported">PC</span><div><GameTitle title={product.title} /><small>{product.publisher ?? product.productId}</small><span>{product.access === 'owned' ? 'Owned' : product.gamePassTier ? gamePassTierLabels[product.gamePassTier] : 'Game Pass'}</span></div></div>
     <button className="catalog-card-install" disabled={disabled} onClick={() => install(product)}>{present ? <Check /> : <Download />}{label}</button>
   </article>;
 }
@@ -398,10 +398,11 @@ export function AccountGames({ data, toast, selectedId, select, menu, filters, o
   const startPackageInstall = usePackageInstall();
   const [localFilters, setLocalFilters] = useState<LibraryFilters>(defaultLibraryFilters);
   const selectedFilters = filters ?? localFilters;
-  const { kind, playState, query } = selectedFilters;
+  const { kind, playState, sort, query } = selectedFilters;
   const updateFilters = (patch: Partial<LibraryFilters>) => (onFiltersChange ?? setLocalFilters)({ ...selectedFilters, ...patch });
   const setKind = (kind: LibraryFilters['kind']) => updateFilters({ kind });
   const setPlayState = (playState: LibraryFilters['playState']) => updateFilters({ playState });
+  const setSort = (sort: LibraryFilters['sort']) => updateFilters({ sort });
   const setQuery = (query: string) => updateFilters({ query });
   const [result, setResult] = useState<AccountLibraryPage>();
   const [busy, setBusy] = useState(false);
@@ -441,11 +442,17 @@ export function AccountGames({ data, toast, selectedId, select, menu, filters, o
   const queued = new Set(data.downloads.filter(task => ['running', 'queued', 'paused'].includes(task.status)).map(task => task.productId.toUpperCase()));
   const products = (visible?.products ?? []).filter(product => !installed.has(product.productId) && !installed.has(product.installProductId ?? ''));
   const access = (game: Game) => game.storeId ? visible?.accessByProductId[game.storeId.toUpperCase()] : undefined;
+  // Installed games only know their tier once their library page has loaded.
+  const passTier = (game: Game) => {
+    const id = game.storeId?.toUpperCase();
+    return id ? visible?.products.find(product => product.productId === id || product.installProductId === id)?.gamePassTier : undefined;
+  };
   const rows = [
     ...data.games.filter(game => playState !== 'installable' && (kind === 'all' || access(game) === kind)).sort((a, b) => a.title.localeCompare(b.title))
-      .map(game => ({ id: game.id, title: game.title, game, product: undefined })),
-    ...products.filter(() => playState !== 'installed').map(product => ({ id: product.productId, title: product.title, product, game: undefined })),
+      .map(game => { const tier = passTier(game); return { id: game.id, title: game.title, game, product: undefined, tier, rank: gamePassTierRank(access(game), tier) }; }),
+    ...products.filter(() => playState !== 'installed').map(product => ({ id: product.productId, title: product.title, product, game: undefined, tier: product.gamePassTier, rank: gamePassTierRank(product.access, product.gamePassTier) })),
   ].filter(row => row.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+  if (sort === 'pass-tier') rows.sort((a, b) => a.rank - b.rank || a.title.localeCompare(b.title));
   async function load(refresh = false) {
     setBusy(true); setError(undefined);
     try {
@@ -472,6 +479,7 @@ export function AccountGames({ data, toast, selectedId, select, menu, filters, o
     <div className="library-filters" data-gamepad-filters>
       <label>Access<select aria-label="Access" value={kind} onChange={event => setKind(event.target.value as AccountLibraryPage['kind'])}><option value="all">All games</option><option value="owned">Owned</option><option value="gamepass">In Game Pass</option></select></label>
       <label>Play state<select aria-label="Play state" value={playState} onChange={event => setPlayState(event.target.value as typeof playState)}><option value="all">All states</option><option value="installed">Installed</option><option value="installable">Ready to install</option></select></label>
+      <label>Sort<select aria-label="Sort" value={sort} onChange={event => setSort(event.target.value as typeof sort)}><option value="installed-first">Installed first</option><option value="pass-tier">Game Pass tier</option></select></label>
       <label className="library-filter-search">Search<input aria-label="Search library" placeholder="Search your games" value={query} onChange={event => setQuery(event.target.value)} /></label>
       <button className="secondary library-refresh" aria-label="Refresh library" title="Refresh library" disabled={!available || busy} onClick={() => load(true)}>{busy ? <LoaderCircle className="spin" /> : <RefreshCw />}</button>
     </div>
@@ -484,7 +492,7 @@ export function AccountGames({ data, toast, selectedId, select, menu, filters, o
           const game = row.game;
           const license = access(game);
           return <div className={`library-card-wrap catalog-card ${selectedId === game.id ? 'selected' : ''}`} data-gamepad-card key={game.id} onContextMenu={event => { event.preventDefault(); menu?.(game, event.clientX, event.clientY); }}>
-            <button className="library-card catalog-card-main" data-gamepad-auto-select="focus" data-gamepad-detail-target={game.id} onFocus={() => select?.(game, false)} onClick={() => select?.(game, true)} onKeyDown={event => { if (event.key === 'F10' && event.shiftKey) { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); menu?.(game, rect.left + 16, rect.top + 16); } }}><Cover game={game} /><div><GameTitle title={game.title} /><small>{game.publisher ?? 'Local installation'}</small><span>{license === 'owned' ? 'Owned' : license === 'gamepass' ? 'Game Pass' : 'Local installation'}</span></div></button>
+            <button className="library-card catalog-card-main" data-gamepad-auto-select="focus" data-gamepad-detail-target={game.id} onFocus={() => select?.(game, false)} onClick={() => select?.(game, true)} onKeyDown={event => { if (event.key === 'F10' && event.shiftKey) { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); menu?.(game, rect.left + 16, rect.top + 16); } }}><Cover game={game} /><div><GameTitle title={game.title} /><small>{game.publisher ?? 'Local installation'}</small><span>{license === 'owned' ? 'Owned' : license === 'gamepass' ? row.tier ? gamePassTierLabels[row.tier] : 'Game Pass' : 'Local installation'}</span></div></button>
             <span className="catalog-card-status" title={game.installMessage}>{game.installState === 'incomplete' ? <><CircleAlert />Incomplete</> : game.installState === 'imported' ? <><FolderOpen />Imported</> : <><Check />{data.gameUpdates?.[game.id]?.available ? 'Update available' : 'Installed'}</>}</span>
             <button className="library-card-menu-button" data-game-menu-trigger data-gamepad-skip aria-label={`Options for ${game.title}`} aria-haspopup="menu" title={`Options for ${game.title}`} onClick={event => { const rect = event.currentTarget.getBoundingClientRect(); menu?.(game, rect.right, rect.bottom); }}><MoreHorizontal /></button>
           </div>;
@@ -1043,7 +1051,7 @@ export default function App() {
     if (!data.games.some(game => game.id === id)) return;
     setLibrarySelection({ id });
     setSearch('');
-    changeLibraryFilters({ ...defaultLibraryFilters, playState: 'installed' });
+    changeLibraryFilters({ ...defaultLibraryFilters, playState: 'installed', sort: libraryFilters.sort });
     setPage('library');
   }
 

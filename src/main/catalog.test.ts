@@ -53,6 +53,20 @@ describe('Microsoft Store catalog parsing', () => {
     });
   });
 
+  it('derives the lowest PC Game Pass tier from non-trial Store licensing keys', () => {
+    const licensed = (keys: string[][], IsTrial = false) => parseCatalogProducts({ productsList: [search.productsList[0]] }, {
+      Products: [{ ...catalog.Products[0], DisplaySkuAvailabilities: [{ Sku: { Properties: { IsTrial } },
+        Availabilities: keys.map(EntitlementKeys => ({ LicensingData: { SatisfyingEntitlementKeys: [{ EntitlementKeys }] } })) }] }],
+    })[0].gamePassTier;
+    expect(licensed([['big:9GAME123:0010'], ['big:CFQ7TTC0KHS0:0007', 'big:cfq7ttc0kgq8:0002'], ['big:CFQ7TTC0P85B:0001']])).toBe('premium');
+    expect(licensed([['big:CFQ7TTC0KHS0:0007', 'big:CFQ7TTC0KGQ8:0002']])).toBe('pc');
+    expect(licensed([['big:CFQ7TTC0KHS0:0007']])).toBe('ultimate');
+    expect(licensed([['big:CFQ7TTC0K6L8:0001']])).toBeUndefined();
+    expect(licensed([['wes:App:CFQ7TTC0K5DJ'], ['CFQ7TTC0K5DJ'], ['big:CFQ7TTC0K5DJ']])).toBeUndefined();
+    expect(licensed([['big:CFQ7TTC0K5DJ:0001']], true)).toBeUndefined();
+    expect(parseCatalogProducts(search, catalog)[0].gamePassTier).toBeUndefined();
+  });
+
   it('rejects image URLs outside Microsoft Store hosts', () => {
     const products = parseCatalogProducts({ productsList: [{ ...search.productsList[0], posterArtUrl: 'https://example.com/tracker.png' }] }, catalog);
     expect(products[0].posterUrl).toBeUndefined();

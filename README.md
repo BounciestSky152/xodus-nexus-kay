@@ -49,7 +49,7 @@ Flatpak version available through Discover. Other browsers are not supported.
 
 ## Use
 
-- **My Library** combines owned, Game Pass and installed games, with Access, Play state and title filters.
+- **My Library** combines owned, Game Pass and installed games, with Access, Play state and title filters. Sort by **Game Pass tier** to order games by the cheapest plan that includes them on PC.
 - Open a game for its description, categories, screenshot gallery and available Xbox achievements, time played and last activity. Xbox data depends on the account and game.
 - **Store** lets you browse and install supported PC games.
 - **Manage content** installs licensed add-ons and campaign packages.
