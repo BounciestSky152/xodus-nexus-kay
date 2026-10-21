@@ -157,8 +157,8 @@ function StatePill({ game }: { game: Game }) {
   </span>;
 }
 
-function SectionTitle({ title, action, onClick }: { title: string; action?: string; onClick?: () => void }) {
-  return <div className="section-title"><h2>{title}</h2>{action && onClick ? <button onClick={onClick}>{action}<ChevronRight /></button> : null}</div>;
+function SectionTitle({ title, action, onClick, children }: { title: string; action?: string; onClick?: () => void; children?: React.ReactNode }) {
+  return <div className="section-title"><h2>{title}</h2>{action && onClick ? <button onClick={onClick}>{action}<ChevronRight /></button> : null}{children}</div>;
 }
 
 function useGameLaunchOptions(game: Game | undefined, data: AppSnapshot): GameLaunchOptions | undefined {
@@ -219,6 +219,15 @@ export function HomePage({ data, go, action }: {
   </main>;
 }
 
+export type StoreSort = 'relevance' | 'pass-tier';
+
+/** Stable, so Microsoft Store relevance still orders games within each tier. */
+export function sortCatalogProducts(products: CatalogProduct[], sort: StoreSort): CatalogProduct[] {
+  return sort === 'pass-tier' ? [...products].sort((a, b) => gamePassTierRank(undefined, a.gamePassTier) - gamePassTierRank(undefined, b.gamePassTier)) : products;
+}
+
+const passName = (product: CatalogProduct) => product.gamePassTier ? gamePassTierLabels[product.gamePassTier] : product.includedWith;
+
 export function StoreProductCard({ product, selected, disabled, label, select, install }: {
   product: CatalogProduct; selected: boolean; disabled: boolean; label: string;
   select: (product: CatalogProduct) => void; install: (product: CatalogProduct) => void;
@@ -228,7 +237,7 @@ export function StoreProductCard({ product, selected, disabled, label, select, i
       onFocus={() => select(product)} onClick={() => select(product)}>
       {product.posterUrl ? <img src={product.posterUrl} alt={`${product.title} cover`} /> : <div className="catalog-cover-placeholder"><Gamepad2 /></div>}
       <span className={`catalog-support ${product.installability}`}>{product.installability === 'supported' ? 'PC' : product.installability === 'unknown' ? '?' : 'Unsupported'}</span>
-      <div><GameTitle title={product.title} /><small>{product.publisher ?? product.productId}</small><span>{product.purchasePrice ?? 'Price unavailable'}{product.includedWith ? ` · ${product.includedWith}` : ''}</span></div>
+      <div><GameTitle title={product.title} /><small>{product.publisher ?? product.productId}</small><span>{product.purchasePrice ?? 'Price unavailable'}{passName(product) ? ` · ${passName(product)}` : ''}</span></div>
     </button>
     <button className="catalog-card-install" data-gamepad-skip data-gamepad-card-action disabled={disabled} onClick={() => install(product)}>
       {label === 'Preparing…' ? <LoaderCircle className="spin" /> : label === 'Installed' ? <Check /> : <Download />}{label}
@@ -236,7 +245,9 @@ export function StoreProductCard({ product, selected, disabled, label, select, i
   </article>;
 }
 
-function StorePage({ data, toast, go, initialQuery }: { data: AppSnapshot; toast: (value: Toast) => void; go: (page: Page) => void; initialQuery: string }) {
+function StorePage({ data, toast, go, initialQuery, sort, onSortChange }: {
+  data: AppSnapshot; toast: (value: Toast) => void; go: (page: Page) => void; initialQuery: string; sort: StoreSort; onSortChange: (sort: StoreSort) => void;
+}) {
   const startPackageInstall = usePackageInstall();
   const [catalog, setCatalog] = useState<CatalogSearchResult>();
   const [featured, setFeatured] = useState<CatalogSearchResult>();
@@ -326,11 +337,11 @@ function StorePage({ data, toast, go, initialQuery }: { data: AppSnapshot; toast
     {!catalog ? <section className="featured-catalog"><SectionTitle title="Featured" />{featuredLoading ? <div className="catalog-loading"><LoaderCircle className="spin" /><span>Loading live Store collection…</span></div> : featured?.products.length ? <><div className="featured-rail">{featured.products.slice(0, 3).map((product) => <button className="featured-tile" key={product.productId} onClick={() => selectProduct(product)}>{product.heroUrl || product.posterUrl ? <img src={product.heroUrl ?? product.posterUrl} alt="" /> : <div className="featured-tile-placeholder"><Gamepad2 /></div>}<span className="featured-tile-copy"><GameTitle title={product.title} /><small>{product.publisher ?? 'Microsoft Store'} · {product.installability === 'supported' ? 'PC package verified' : 'Check package support'}</small></span></button>)}</div><SectionTitle title="Trending PC games" />{productGrid(featured.products.slice(3))}</> : <div className="catalog-empty"><Store /><h2>Featured games are temporarily unavailable</h2><p>{featuredError ?? 'Search still works with live Microsoft Store data.'}</p></div>}</section> : null}
 
     {selected ? <section className={`catalog-selection ${selected.heroUrl ? 'has-art' : ''}`} style={selected.heroUrl ? { '--catalog-hero': `url(${selected.heroUrl})` } as React.CSSProperties : undefined}>
-      <div className="catalog-selection-copy"><span className="overline">SELECTED PRODUCT</span><h2>{selected.title}</h2><div className="catalog-badges">{selected.purchasePrice ? <span>{selected.purchasePrice}</span> : null}{selected.includedWith ? <span className="pass">Available with {selected.includedWith}</span> : null}<span className={selected.installability}>{selected.installability === 'supported' ? 'PC MSIXVC verified' : selected.installability}</span></div><p>{selected.description}</p><small>{selected.publisher ?? 'Publisher unavailable'} · Store ID {selected.productId}{selected.installProductId ? ` · Package ID ${selected.installProductId}` : ''}</small></div>
+      <div className="catalog-selection-copy"><span className="overline">SELECTED PRODUCT</span><h2>{selected.title}</h2><div className="catalog-badges">{selected.purchasePrice ? <span>{selected.purchasePrice}</span> : null}{passName(selected) ? <span className="pass">Available with {passName(selected)}</span> : null}<span className={selected.installability}>{selected.installability === 'supported' ? 'PC MSIXVC verified' : selected.installability}</span></div><p>{selected.description}</p><small>{selected.publisher ?? 'Publisher unavailable'} · Store ID {selected.productId}{selected.installProductId ? ` · Package ID ${selected.installProductId}` : ''}</small></div>
       <div className="catalog-install-box"><p className={selected.installability === 'supported' ? 'supported' : 'unsupported'}>{selected.supportNote}</p><label>Install location<div className="input-action"><input value={destination} onChange={(event) => setDestination(event.target.value)} /><button type="button" onClick={chooseDestination} title="Choose folder"><FolderOpen /></button></div></label><div className="button-row"><button className="primary" disabled={selected.installability !== 'supported' || Boolean(busy) || !data.backend.capabilities.streaming || isInstalled(selected) || isQueued(selected)} onClick={() => install(selected, destination)}>{busy === selected.productId ? <LoaderCircle className="spin" /> : isInstalled(selected) ? <Check /> : <ArrowDownToLine />}{isInstalled(selected) ? 'Installed' : isQueued(selected) ? 'In Install Queue' : 'Install with Xodus'}</button>{selected.storeUrl ? <button className="secondary" onClick={() => window.open(selected.storeUrl, '_blank')}>Store page</button> : null}</div></div>
     </section> : null}
 
-    {catalog ? <><SectionTitle title={`Results for “${catalog.query}”`} />{productGrid(catalog.products)}{catalog.products.length === 0 ? <div className="empty-state compact"><div><Search /></div><h2>No games found</h2><p>Try a different title or a Microsoft Store Product ID.</p></div> : null}{catalog.hasMore ? <div className="load-more"><button className="secondary" disabled={loadingMore} onClick={loadMore}>{loadingMore ? <LoaderCircle className="spin" /> : <Plus />}Load more results</button></div> : null}</> : null}
+    {catalog ? <><SectionTitle title={`Results for “${catalog.query}”`}><label className="catalog-sort">Sort<select aria-label="Sort results" value={sort} onChange={event => onSortChange(event.target.value as StoreSort)}><option value="relevance">Relevance</option><option value="pass-tier">Game Pass tier</option></select></label></SectionTitle>{productGrid(sortCatalogProducts(catalog.products, sort))}{catalog.products.length === 0 ? <div className="empty-state compact"><div><Search /></div><h2>No games found</h2><p>Try a different title or a Microsoft Store Product ID.</p></div> : null}{catalog.hasMore ? <div className="load-more"><button className="secondary" disabled={loadingMore} onClick={loadMore}>{loadingMore ? <LoaderCircle className="spin" /> : <Plus />}Load more results</button></div> : null}</> : null}
 
     <SectionTitle title="Install by Product ID" />
     <form className="manual-install" onSubmit={manualInstall}><label>Product ID<input value={manualProductId} onChange={(event) => setManualProductId(event.target.value)} placeholder="For example: 9N4PT8HGCDHQ" required /></label><label>Queue name <em>Optional</em><input value={manualTitle} onChange={(event) => setManualTitle(event.target.value)} /></label><label>Install location<div className="input-action"><input value={destination} onChange={(event) => setDestination(event.target.value)} required /><button type="button" onClick={chooseDestination}><FolderOpen /></button></div></label><button className="secondary" disabled={Boolean(busy) || !data.backend.capabilities.streaming}>{busy === 'manual' ? <LoaderCircle className="spin" /> : <Terminal />}Install unlisted ID</button></form>
@@ -1023,6 +1034,7 @@ export default function App() {
   const [toast, setToast] = useState<Toast>();
   const [search, setSearch] = useState('');
   const [submittedSearch, setSubmittedSearch] = useState('');
+  const [storeSort, setStoreSort] = useState<StoreSort>('relevance');
   // App stays mounted while pages change, unlike LibraryPage/AccountGames.
   const [libraryFilters, setLibraryFilters] = useState<LibraryFilters>(() => loadLibraryFilters());
   const [librarySelection, setLibrarySelection] = useState<{ id: string }>();
@@ -1064,7 +1076,7 @@ export default function App() {
 
     <section className="content-shell">
       <header className="topbar"><GlobalSearch games={data.games} page={page} query={search} change={setSearch} submit={value => { setSubmittedSearch(value); setPage('store'); }} select={openLibraryGame} /><TopStatus data={data} go={setPage} /></header>
-      <div className="page-scroll">{page === 'home' ? <HomePage data={data} go={setPage} action={action} /> : null}{page === 'store' ? <StorePage data={data} toast={setToast} go={setPage} initialQuery={submittedSearch} /> : null}{page === 'library' ? <LibraryPage data={data} toast={setToast} filters={libraryFilters} onFiltersChange={changeLibraryFilters} selection={librarySelection} /> : null}{page === 'downloads' ? <DownloadsPage data={data} toast={setToast} /> : null}{page === 'settings' ? <SettingsPage data={data} toast={setToast} /> : null}</div>
+      <div className="page-scroll">{page === 'home' ? <HomePage data={data} go={setPage} action={action} /> : null}{page === 'store' ? <StorePage data={data} toast={setToast} go={setPage} initialQuery={submittedSearch} sort={storeSort} onSortChange={setStoreSort} /> : null}{page === 'library' ? <LibraryPage data={data} toast={setToast} filters={libraryFilters} onFiltersChange={changeLibraryFilters} selection={librarySelection} /> : null}{page === 'downloads' ? <DownloadsPage data={data} toast={setToast} /> : null}{page === 'settings' ? <SettingsPage data={data} toast={setToast} /> : null}</div>
     </section>
     {toast ? <div className={`toast ${toast.kind}`}>{toast.kind === 'success' ? <Check /> : toast.kind === 'error' ? <CircleAlert /> : <Terminal />}<span>{toast.message}</span><button onClick={() => setToast(undefined)}><X /></button></div> : null}
   </div><GamepadNavigation back={() => setPage('home')} page={delta => setPage(current => {
